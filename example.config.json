@@ -1,4 +1,11 @@
 {
 	"APIID":	"YOUR_API_ID",
-	"APIHash":	"YOUR_API_HASH"
+	"APIHash":	"YOUR_API_HASH",
+	"proxy": {
+		"type":"socks",
+		"ip":"127.0.0.1",
+		"port":"1080",
+		"login":"",
+		"pass":""
+	}
 }

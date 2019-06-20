@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -13,9 +14,18 @@ import (
 	"github.com/Arman92/go-tdlib"
 )
 
+type Proxy struct {
+	Type  string `json:"type`
+	IP    string `json:"ip"`
+	Port  int32  `json:"port"`
+	Login string `json:"login"`
+	Pass  string `json:"pass"`
+}
+
 type Config struct {
 	APIID   string `json:"APIID"`
 	APIHash string `json:"APIHash"`
+	Proxy   Proxy  `json:"proxy"`
 }
 
 func LoadConfiguration(file string) Config {
@@ -73,10 +83,16 @@ func getChatList(client *tdlib.Client, limit int) error {
 }
 
 func main() {
+
+	var chatID int64
+	var proxyAssigned *tdlib.Proxy
+	var err error
+
 	tdlib.SetLogVerbosityLevel(1)
 	tdlib.SetFilePath("./errors.txt")
 
 	config := LoadConfiguration("./config.json")
+	chatID = 860175318
 
 	// Create new instance of client
 	client := tdlib.NewClient(tdlib.Config{
@@ -94,6 +110,43 @@ func main() {
 		FileDirectory:       "./tdlib-files",
 		IgnoreFileNames:     false,
 	})
+
+	/* proxies, err := client.GetProxies()
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(proxies)
+	}
+	*/
+	// You can set username and password to empty of don't need it
+	switch config.Proxy.Type {
+
+	case "socks5":
+		// Socks5
+		proxyAssigned, err = client.AddProxy(config.Proxy.IP, config.Proxy.Port, true, tdlib.NewProxyTypeSocks5(config.Proxy.Login, config.Proxy.Pass))
+		fmt.Println("SOCKS proxy")
+
+	case "http":
+		// HTTP - HTTPS proxy
+		proxyAssigned, err = client.AddProxy(config.Proxy.IP, config.Proxy.Port, true, tdlib.NewProxyTypeHttp(config.Proxy.Login, config.Proxy.Pass, false))
+		fmt.Println("HTTP proxy")
+
+	case "mtproto":
+		// MtProto Proxy
+		proxyAssigned, err = client.AddProxy(config.Proxy.IP, config.Proxy.Port, true, tdlib.NewProxyTypeMtproto(config.Proxy.Login))
+		fmt.Println("MTPROTO proxy")
+
+	default:
+		fmt.Println("No proxy")
+
+	}
+
+	if err == nil {
+		seconds, _ := client.PingProxy(proxyAssigned.ID)
+		fmt.Printf("Proxy ping: %f s \n", seconds.Seconds)
+	} else {
+		fmt.Println(err)
+	}
 
 	// Handle Ctrl+C
 	ch := make(chan os.Signal, 2)
@@ -138,30 +191,46 @@ func main() {
 
 	// Main loop
 
-	// get at most 1000 chats list
-	/*getChatList(client, 1000)
-	fmt.Printf("got %d chats\n", len(allChats))
-
-	for _, chat := range allChats {
-		fmt.Printf("Chat title: %s\tChat id: %s\n", chat.Title, chat.ID)
-	}*/
-
 	var pingTime time.Time
 
 	go func() {
 		for {
 			var message string
-			fmt.Print("Enter message:")
+			// fmt.Print("Enter message:")
 			fmt.Scanln(&message)
 
-			pingTime = time.Now()
-			chatID := int64(860175318) // tg-ping-bot chat id
+			switch message {
 
-			inputMsgTxt := tdlib.NewInputMessageText(tdlib.NewFormattedText(message, nil), true, true)
-			_, err := client.SendMessage(chatID, 0, false, true, nil, inputMsgTxt)
-			if err != nil {
-				fmt.Printf("Error while sending: %s", err)
-				continue
+			case "ping":
+				pingTime = time.Now()
+				// chatID := int64(860175318) // tg-ping-bot chat id
+
+				inputMsgTxt := tdlib.NewInputMessageText(tdlib.NewFormattedText(message, nil), true, true)
+				_, err := client.SendMessage(chatID, 0, false, true, nil, inputMsgTxt)
+				if err != nil {
+					fmt.Printf("Error while sending: %s", err)
+					continue
+				}
+			case "chatlist":
+				// get at most 1000 chats list
+				getChatList(client, 1000)
+				fmt.Printf("got %d chats\n", len(allChats))
+
+				for _, chat := range allChats {
+					fmt.Printf("Chat title: %s\tChat id: %d\n", chat.Title, int64(chat.ID))
+				}
+
+			case "setchat":
+				var chatStrId string
+				var err error
+				fmt.Print("Enter chat ID:")
+				fmt.Scanln(&chatStrId)
+				// get at most 1000 chats list
+				chatID, err = strconv.ParseInt(chatStrId, 10, 64)
+				if err != nil {
+					fmt.Println("Invalid int64 value")
+				}
+
 			}
 
 			// fmt.Println(result)
@@ -174,10 +243,10 @@ func main() {
 	for update := range rawUpdates {
 		// Show all updates
 
-		chatID := update.Data["chat_id"]
-		if chatID != nil {
-			chatID2 := chatID.(float64)
-			if int64(chatID2) == int64(860175318) {
+		updatedChatID := update.Data["chat_id"]
+		if updatedChatID != nil {
+			chatID2 := updatedChatID.(float64)
+			if int64(chatID2) == chatID {
 
 				// fmt.Println(int64(chatID2))
 				if update.Data["last_message"] != nil {
@@ -185,7 +254,7 @@ func main() {
 					if strings.Contains(reponseText, "pong") {
 						if !pingTime.IsZero() {
 							elapsed := time.Since(pingTime)
-							fmt.Printf("Ping time: %s\n", elapsed)
+							fmt.Printf("pong time: %s\n", elapsed)
 							pingTime = time.Time{}
 						}
 						// fmt.Println(reponseText)
